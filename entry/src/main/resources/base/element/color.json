@@ -1,0 +1,40 @@
+{
+  "color": [
+    {
+      "name": "background",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "chrome",
+      "value": "#F0F2F5"
+    },
+    {
+      "name": "text",
+      "value": "#18212F"
+    },
+    {
+      "name": "muted",
+      "value": "#687383"
+    },
+    {
+      "name": "line",
+      "value": "#E1E5EB"
+    },
+    {
+      "name": "accent",
+      "value": "#3267CA"
+    },
+    {
+      "name": "selected",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "soft",
+      "value": "#F5F6F9"
+    },
+    {
+      "name": "danger",
+      "value": "#AF3F40"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+.idea/
+.hvigor/
+oh_modules/
+**/build/
+artifacts/
+local.properties
+/build-profile.json5
+*.p12
+*.p7b
+*.cer
+*.jks
+*.keystore
+.DS_Store
+
+# Local credentials and generated packages
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.hap
+*.hsp
+*.app
+*.log
+node_modules/
+__pycache__/
