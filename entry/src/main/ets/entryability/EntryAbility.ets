@@ -9,6 +9,18 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(stage: window.WindowStage): void {
+    this.loadWindow(stage);
+  }
+
+  private async loadWindow(stage: window.WindowStage): Promise<void> {
+    try {
+      const appWindow = await stage.getMainWindow();
+      // Let the compact browser toolbar occupy the former status-bar space.
+      await appWindow.setWindowLayoutFullScreen(true);
+      await appWindow.setWindowSystemBarEnable(['navigation']);
+    } catch (_) {
+      console.warn('Air Browser could not apply the immersive window layout.');
+    }
     stage.loadContent('pages/Index', (error) => {
       if (error.code) { console.error(`Air Browser failed to load: ${error.code}`); }
     });

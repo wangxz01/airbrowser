@@ -244,8 +244,8 @@ struct Index {
     const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     this.systemBarQueue = this.systemBarQueue.catch(() => {}).then(async () => {
       const appWindow = await window.getLastWindow(context);
-      await appWindow.setWindowSystemBarEnable(full ? [] : ['status', 'navigation']);
-      await appWindow.setWindowLayoutFullScreen(full);
+      await appWindow.setWindowLayoutFullScreen(true);
+      await appWindow.setWindowSystemBarEnable(full ? [] : ['navigation']);
     }).catch(() => {});
   }
 
@@ -629,6 +629,18 @@ struct Index {
 
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
+      // Extend only the background; controls and Web stay inside the safe area.
+      Row() {
+        if (!this.fullScreen) {
+          Blank().width(this.compact() ? 52 : this.sidebarWidth).height('100%')
+            .backgroundColor($r('app.color.chrome'))
+            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+        }
+        Blank().layoutWeight(1).height('100%')
+          .backgroundColor(this.fullScreen ? Color.Black :
+            (this.activeHome ? $r('app.color.soft') : $r('app.color.background')))
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+      }.width('100%').height('100%').hitTestBehavior(HitTestMode.None)
       Column() {
         if (this.ready) {
           this.browserToolbar();
