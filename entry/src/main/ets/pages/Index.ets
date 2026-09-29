@@ -244,8 +244,8 @@ struct Index {
     const context = this.getUIContext().getHostContext() as common.UIAbilityContext;
     this.systemBarQueue = this.systemBarQueue.catch(() => {}).then(async () => {
       const appWindow = await window.getLastWindow(context);
-      await appWindow.setWindowLayoutFullScreen(true);
-      await appWindow.setWindowSystemBarEnable(full ? [] : ['navigation']);
+      await appWindow.setWindowSystemBarEnable(full ? [] : ['status', 'navigation']);
+      await appWindow.setWindowLayoutFullScreen(full);
     }).catch(() => {});
   }
 
