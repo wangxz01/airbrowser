@@ -12,6 +12,11 @@ const server=http.createServer((req,res)=>{
   if(url.pathname==='/login'){
     res.writeHead(302,{'Set-Cookie':'air_test_persistent=present; Max-Age=86400; Path=/; SameSite=Lax','Location':'/a'});res.end();return;
   }
+  if (url.pathname === '/find') {
+    res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'});
+    res.end('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Find fixture</title><style>body{font:24px sans-serif;padding:30px}section{height:900px}</style><h1>页内查找测试</h1><section>浏览器 第一处</section><section>浏览器 第二处</section><p>浏览器 第三处</p>');
+    return;
+  }
   const page=url.pathname==='/b'?'B':'A';
   res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});
   res.end(`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Air test ${page}</title><style>body{font:20px system-ui;padding:24px;background:#f3f7f3;color:#25362c}button,a{display:inline-block;padding:16px;margin:6px;background:#dae8db;border:0;border-radius:7px;color:#25362c;text-decoration:none;font:inherit}video{display:block;width:min(720px,90%);background:#15251d;margin-top:20px}</style></head><body><h1>Air test ${page}</h1><p id="cookie">Cookie: ${String(req.headers.cookie||'').includes('air_test_persistent=present')?'PERSISTED':'EMPTY'}</p><p id="storage"></p><a href="/${page==='A'?'b':'a'}">Go ${page==='A'?'B':'A'}</a><a href="/b" target="_blank">New tab B</a><a href="/login">Set persistent cookie</a><button onclick="history.pushState({},'', '/spa');document.title='Air SPA';document.querySelector('h1').textContent='Air SPA'">SPA navigation</button><button onclick="alert('Native dialog')">Alert</button><a href="bilibili://video/test">App link</a><button onclick="document.querySelector('video').requestFullscreen()">Video fullscreen</button><video controls loop playsinline src="/video.mp4"></video><script>const old=localStorage.getItem('air_test');document.getElementById('storage').textContent='Storage: '+(old?'PERSISTED':'FIRST');localStorage.setItem('air_test','present');</script></body></html>`);

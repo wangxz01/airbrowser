@@ -13,6 +13,7 @@ export struct BrowserPane {
   onFullscreen: (handler?: FullScreenExitHandler) => void = () => {};
   onDialog: (kind: string, message: string, value: string, result: JsResult) => void = () => {};
   onClose: () => void = () => {};
+  onFindResult: (event: OnSearchResultReceiveEvent) => void = () => {};
   onNotice: (message: string) => void = () => {};
 
   private attached(): void {
@@ -64,6 +65,10 @@ export struct BrowserPane {
           if (!this.tab.favicon) {
             try { this.tab.favicon = this.tab.controller.getFavicon(); } catch (_) {}
           }
+          if (this.tab.zoomPercent !== 100) {
+            this.tab.applyZoom(this.tab.zoomPercent).then(() => { this.onChanged(); })
+              .catch(() => { if (this.active) { this.onNotice('未能恢复网页缩放，请在菜单中重试。'); } });
+          }
           saveCookies().catch(() => { if (this.active) { this.onNotice('网站状态保存失败，可在菜单中重试保存。'); } });
           this.onChanged();
         })
@@ -73,6 +78,7 @@ export struct BrowserPane {
         .onFaviconReceived((event) => {
           if (event?.favicon) { this.tab.favicon = event.favicon; }
         })
+        .onSearchResultReceive((event) => { if (event) { this.onFindResult(event); } })
         .onTitleReceive((event) => {
           if (event && event.title) { this.tab.title = event.title.slice(0, 200); this.onChanged(); }
         })

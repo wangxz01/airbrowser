@@ -1,6 +1,7 @@
 import { image } from '@kit.ImageKit';
 import { webview } from '@kit.ArkWeb';
 import { desktopAgent } from './BrowserRules';
+import { pageZoomScript } from './PageZoom';
 
 @Observed
 export class BrowserTab {
@@ -16,6 +17,7 @@ export class BrowserTab {
   canBack: boolean = false;
   canForward: boolean = false;
   desktop: boolean = false;
+  zoomPercent: number = 100;
   audio: boolean = false;
   muted: boolean = false;
   error: string = '';
@@ -33,6 +35,13 @@ export class BrowserTab {
       if (!this.defaultAgent) { this.defaultAgent = this.controller.getUserAgent(); }
       this.controller.setCustomUserAgent(this.desktop ? desktopAgent(this.defaultAgent) : this.defaultAgent);
     } catch (_) { throw new Error('Unable to apply site display mode'); }
+  }
+
+  async applyZoom(percent: number): Promise<void> {
+    if (!this.ready) { throw new Error('Page is not ready'); }
+    const result = await this.controller.runJavaScript(pageZoomScript(percent));
+    if (result !== 'true') { throw new Error('Unable to zoom page'); }
+    this.zoomPercent = percent;
   }
 
   syncHistory(): void {

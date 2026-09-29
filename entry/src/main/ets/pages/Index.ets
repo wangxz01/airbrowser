@@ -30,6 +30,17 @@ struct Index {
   @State @Watch('syncPanel') panel: string = '';
   @State sheetShown: boolean = false;
   @State menuShown: boolean = false;
+  @State findShown: boolean = false;
+  @State findQuery: string = '';
+  @State findCount: number = 0;
+  @State findIndex: number = 0;
+  @State findPending: boolean = false;
+  private findInput: TextInputController = new TextInputController();
+  private findTabId: string = '';
+  private findSubmitted: string = '';
+  private findPrimed: boolean = false;
+  private findTimer: number = -1;
+  private findFocusTimer: number = -1;
   @State homeQuery: string = '';
   @State homeEditing: boolean = false;
   private homeSearch: SearchController = new SearchController();
@@ -39,6 +50,8 @@ struct Index {
   @State canForward: boolean = false;
   @State loading: boolean = false;
   @State starred: boolean = false;
+  @State currentZoom: number = 100;
+  @State zoomBusy: boolean = false;
   @State currentDesktop: boolean = false;
   @State activeHome: boolean = true;
   @State dialogKind: string = '';
@@ -95,6 +108,7 @@ struct Index {
     if (!this.editing) { this.address = tab.url; }
     this.canBack = tab.canBack; this.canForward = tab.canForward; this.progress = tab.progress;
     this.loading = tab.loading; this.currentDesktop = tab.desktop; this.activeHome = !tab.live;
+    this.currentZoom = tab.zoomPercent;
     this.starred = this.bookmarks.some((p: SavedPage) => p.url === tab.url);
   }
 
@@ -106,6 +120,7 @@ struct Index {
   onPageHide(): void { this.capture(); browserStore.flush().catch(() => {}); saveCookies().catch(() => {}); }
   onPageShow(): void { if (browserStore.lastError) { this.showNotice(browserStore.lastError); } }
   aboutToDisappear(): void {
+    this.closeFind();
     clearTimeout(this.noticeTimer); this.capture(); browserStore.flush().catch(() => {});
     this.jsResult?.handleCancel(); this.jsResult = undefined;
     this.leaveFullscreen();
@@ -113,6 +128,7 @@ struct Index {
 
   onBackPress(): boolean {
     if (this.menuShown) { this.menuShown = false; return true; }
+    if (this.findShown && !this.panel && !this.dialogKind && !this.editing) { this.closeFind(); return true; }
     const action = backAction({ editing: this.editing || this.homeEditing, dialog: this.dialogKind !== '', panel: this.panel !== '',
       fullscreen: this.fullScreen, navigates: this.backNavigates, canBack: this.canBack });
     if (action === 'keyboard') { this.homeSearch.stopEditing(); this.homeEditing = false; this.input.stopEditing(); this.editing = false; this.syncView(); }
@@ -125,6 +141,7 @@ struct Index {
   }
 
   private selectTab(id: string): void {
+    this.closeFind();
     if (this.fullScreen) { this.leaveFullscreen(); }
     this.homeSearch.stopEditing(); this.homeEditing = false; this.homeQuery = '';
     this.input.stopEditing(); this.editing = false; this.menuShown = false; this.panel = '';
@@ -211,6 +228,7 @@ struct Index {
 
   private pageChanged(tab: BrowserTab, url: string, finished: boolean): void {
     if (!this.tabs.some((t: BrowserTab) => t.id === tab.id)) { return; }
+    if (!finished && this.findTabId === tab.id) { this.closeFind(); }
     if (finished) { this.history = recordVisit(this.history, url, tab.title || webHost(url), Date.now()); }
     this.syncView(); this.capture();
   }
@@ -224,6 +242,7 @@ struct Index {
 
   private fullscreen(tabId: string, handler?: FullScreenExitHandler): void {
     if (handler) {
+      this.closeFind();
       this.exitHandler = handler; this.fullTabId = tabId; this.fullScreen = true; this.panel = '';
       this.input.stopEditing(); this.editing = false;
       this.setSystemBars(true);
@@ -259,6 +278,73 @@ struct Index {
       this.bookmarks = [{ url: tab.url, title: tab.title, time: Date.now() }, ...this.bookmarks]; this.showNotice('已收藏');
     }
     this.syncView(); this.capture();
+  }
+
+  private openFind(): void {
+    const tab = this.current();
+    if (!tab?.ready || !tab.live) { this.showNotice('请先打开一个网页。'); return; }
+    this.closeFind(); this.menuShown = false; this.panel = '';
+    this.input.stopEditing(); this.homeSearch.stopEditing();
+    this.findShown = true; this.findTabId = tab.id;
+    this.findFocusTimer = setTimeout(() => {
+      if (this.findShown) { this.getUIContext().getFocusController().requestFocus('page-find-input'); }
+    }, 200);
+  }
+
+  private closeFind(): void {
+    clearTimeout(this.findTimer); clearTimeout(this.findFocusTimer);
+    const tab = this.tabs.find((item: BrowserTab) => item.id === this.findTabId);
+    this.findShown = false; this.findTabId = ''; this.findSubmitted = '';
+    this.findQuery = ''; this.findCount = 0; this.findIndex = 0; this.findPending = false;
+    this.findInput.stopEditing();
+    try { if (tab?.ready) { tab.controller.clearMatches(); } } catch (_) {}
+  }
+
+  private updateFind(value: string): void {
+    clearTimeout(this.findTimer);
+    this.findQuery = value; this.findSubmitted = '';
+    this.findCount = 0; this.findIndex = 0; this.findPending = value.length > 0;
+    const tab = this.current();
+    try { if (tab?.ready) { tab.controller.clearMatches(); } } catch (_) {}
+    if (value) { this.findTimer = setTimeout(() => { this.runFind(); }, 180); }
+  }
+
+  private runFind(): void {
+    clearTimeout(this.findTimer);
+    const tab = this.current();
+    if (!this.findShown || !this.findQuery || !tab?.ready || tab.id !== this.findTabId) { return; }
+    this.findSubmitted = this.findQuery; this.findPending = true; this.findPrimed = false;
+    try { tab.controller.searchAllAsync(this.findQuery); }
+    catch (_) { this.findPending = false; this.showNotice('页内查找暂不可用，请等待页面加载完成后重试。'); }
+  }
+
+  private receiveFind(tabId: string, event: OnSearchResultReceiveEvent): void {
+    if (!this.findShown || tabId !== this.findTabId || !this.findSubmitted || this.findQuery !== this.findSubmitted) { return; }
+    this.findCount = event.numberOfMatches;
+    this.findIndex = event.numberOfMatches > 0 ? event.activeMatchOrdinal + 1 : 0;
+    this.findPending = !event.isDoneCounting;
+    // ArkWeb initially counts highlights without activating one; select the first now.
+    if (event.isDoneCounting && event.numberOfMatches > 0 && !this.findPrimed) {
+      this.findPrimed = true;
+      try { this.current()?.controller.searchNext(true); } catch (_) {}
+    }
+  }
+
+  private stepFind(forward: boolean): void {
+    if (this.findPending || !this.findQuery) { return; }
+    this.findInput.stopEditing();
+    try { if (this.findCount > 0) { this.current()?.controller.searchNext(forward); } } catch (_) {
+      this.showNotice('未能跳转匹配项，请重新查找。');
+    }
+  }
+
+  private async changeZoom(percent: number): Promise<void> {
+    const tab = this.current();
+    if (!tab?.ready || tab.loading || this.zoomBusy) { return; }
+    this.zoomBusy = true;
+    try { await tab.applyZoom(percent); this.syncView(); }
+    catch (_) { this.showNotice('网页缩放失败，请等待页面加载完成后重试。'); }
+    finally { this.zoomBusy = false; }
   }
 
   private toggleDesktop(): void {
@@ -358,6 +444,26 @@ struct Index {
         })
     }.height(48).width('100%').padding({ left: 4, right: 4 }).backgroundColor($r('app.color.chrome'))
       .visibility(this.fullScreen ? Visibility.None : Visibility.Visible)
+  }
+
+  @Builder
+  private findToolbar() {
+    Row({ space: 4 }) {
+      if (this.windowWidth > 720) { Text('页内查找').fontSize(13).fontColor($r('app.color.muted')).margin({ right: 8 }) }
+      TextInput({ text: this.findQuery, placeholder: '在当前网页中查找', controller: this.findInput })
+        .id('page-find-input').layoutWeight(1).height(36).fontSize(14).maxLength(512)
+        .backgroundColor($r('app.color.background')).fontColor($r('app.color.text')).borderRadius(18)
+        .enterKeyType(EnterKeyType.Search).onChange((value) => { this.updateFind(value); })
+        .onSubmit(() => { if (this.findSubmitted !== this.findQuery) { this.runFind(); } else { this.stepFind(true); } })
+        .accessibilityText('网页内查找关键词')
+      Text(!this.findQuery ? '' : this.findPending ? '查找中…' : this.findCount ? `${this.findIndex}/${this.findCount}` : '无匹配')
+        .width(72).fontSize(13).fontColor($r('app.color.muted')).textAlign(TextAlign.Center)
+      IconButton({ icon: $r('app.media.up'), label: '上一个匹配', available: this.findCount > 0 && !this.findPending,
+        onPress: () => { this.stepFind(false); } })
+      IconButton({ icon: $r('app.media.down'), label: '下一个匹配', available: this.findCount > 0 && !this.findPending,
+        onPress: () => { this.stepFind(true); } })
+      IconButton({ icon: $r('app.media.close'), label: '关闭页内查找', onPress: () => { this.closeFind(); } })
+    }.width('100%').height(48).padding({ left: 12, right: 4 }).backgroundColor($r('app.color.chrome'))
   }
 
   @Builder
@@ -486,6 +592,7 @@ struct Index {
       ForEach(this.tabs, (tab: BrowserTab) => {
           BrowserPane({ tab: tab, active: tab.id === this.activeId,
             onChanged: () => { this.syncView(); this.capture(); },
+            onFindResult: (event) => { this.receiveFind(tab.id, event); },
             onLocation: (url, finished) => { this.pageChanged(tab, url, finished); },
             onBeforeNavigate: (url) => {
               const desktop = this.preferDesktop(url);
@@ -525,6 +632,10 @@ struct Index {
           .enabled(!this.activeHome).onClick(() => { this.toggleStar(); })
       }
       MenuItemGroup() {
+        MenuItem({ startIcon: $r('app.media.search'), content: '网页内查找' }).enabled(!this.activeHome)
+          .onClick(() => { this.openFind(); })
+        MenuItem({ content: '网页缩放', labelInfo: `${this.currentZoom}%` }).enabled(!this.activeHome)
+          .onClick(() => { this.menuShown = false; this.panel = 'zoom'; })
         MenuItem({ startIcon: $r('app.media.refresh'), content: '刷新网页' }).enabled(!this.activeHome).onClick(() => { this.reload(); })
         MenuItem({ content: this.currentDesktop ? '使用默认网页' : '请求电脑版网页' }).enabled(!this.activeHome)
           .onClick(() => { this.toggleDesktop(); })
@@ -592,15 +703,38 @@ struct Index {
   }
 
   @Builder
+  private zoomContents() {
+    Row({ space: 16 }) {
+      Button('−').width(48).height(44).fontSize(24).borderRadius(14)
+        .backgroundColor($r('app.color.soft')).fontColor($r('app.color.text'))
+        .enabled(!this.zoomBusy && !this.loading && this.currentZoom > 50)
+        .accessibilityText('缩小网页').onClick(() => { this.changeZoom(this.currentZoom - 25); })
+      Text(`${this.currentZoom}%`).fontSize(24).fontWeight(FontWeight.Medium)
+        .fontColor($r('app.color.text')).width(90).textAlign(TextAlign.Center)
+      Button('+').width(48).height(44).fontSize(24).borderRadius(14)
+        .backgroundColor($r('app.color.soft')).fontColor($r('app.color.text'))
+        .enabled(!this.zoomBusy && !this.loading && this.currentZoom < 200)
+        .accessibilityText('放大网页').onClick(() => { this.changeZoom(this.currentZoom + 25); })
+      Button('重置').height(44).fontSize(14).borderRadius(14)
+        .backgroundColor($r('app.color.soft')).fontColor($r('app.color.text'))
+        .enabled(!this.zoomBusy && !this.loading && this.currentZoom !== 100)
+        .onClick(() => { this.changeZoom(100); })
+    }.width('100%').justifyContent(FlexAlign.Center).padding({ top: 8, bottom: 16 })
+    Text('仅调整当前标签页，重新启动后恢复 100%。').fontSize(12)
+      .fontColor($r('app.color.muted')).width('100%').textAlign(TextAlign.Center)
+  }
+
+  @Builder
   private panelView() {
     Column() {
       Row() {
-        Text(this.panel === 'settings' ? '设置' : this.panel === 'history' ? '浏览历史' : '收藏夹')
+        Text(this.panel === 'zoom' ? '网页缩放' : this.panel === 'settings' ? '设置' : this.panel === 'history' ? '浏览历史' : '收藏夹')
           .fontSize(22).fontWeight(FontWeight.Medium).fontColor($r('app.color.text')).layoutWeight(1)
       }.height(64).width('100%').padding({ left: 24, right: 56 })
       Scroll() {
         Column({ space: 8 }) {
-          if (this.panel === 'settings') { this.settingsContents(); }
+          if (this.panel === 'zoom') { this.zoomContents(); }
+          else if (this.panel === 'settings') { this.settingsContents(); }
           else if (this.panel === 'history') { this.pageList(this.history, false); }
           else { this.pageList(this.bookmarks, true); }
         }.width('100%').alignItems(HorizontalAlign.Start).padding({ left: 16, right: 16, bottom: 24 })
@@ -644,6 +778,7 @@ struct Index {
       Column() {
         if (this.ready) {
           this.browserToolbar();
+          if (this.findShown && !this.fullScreen) { this.findToolbar(); }
           Row() {
             this.sidebar();
             Stack({ alignContent: Alignment.TopStart }) {
@@ -668,7 +803,7 @@ struct Index {
       }
     }.width('100%').height('100%').backgroundColor($r('app.color.background'))
       .bindSheet($$this.sheetShown, this.panelView(), {
-        height: '80%', width: 520, preferType: SheetType.CENTER,
+        height: this.panel === 'zoom' ? 230 : '80%', width: 520, preferType: SheetType.CENTER,
         showClose: true, dragBar: false, backgroundColor: $r('app.color.soft'),
         onDisappear: () => { this.panel = ''; }
       })
